@@ -28,12 +28,11 @@
 #   The Package name of the PHP CLI package.
 #
 # [*user*]
-#   The user name to exec the composer commands as. Default is undefined.
+#   The user name to exec the composer commands as. Default is composer::user.
 #
 # [*working_dir*]
 #   Use the given directory as working directory.
 #
-# === Authors
 # === Authors
 #
 # Thomas Ploch <profiploch@gmail.com>
@@ -48,13 +47,12 @@ define composer::project(
   $version        = undef,
   $dev            = true,
   $prefer_source  = false,
-  $prefer_dist    = false,
   $stability      = 'dev',
   $repository_url = undef,
   $keep_vcs       = false,
   $tries          = 3,
   $timeout        = 1200,
-  $user           = undef,
+  $user           = $composer::user,
   $working_dir    = undef,
 ) {
   require ::composer
@@ -65,8 +63,12 @@ define composer::project(
     user        => $user,
   }
 
+  $composer_path = "${composer::target_dir}/${composer::composer_file}"
+  $stability_config = "--stability=${stability}"
+
   $exec_name    = "composer_create_project_${title}"
-  $base_command = "${composer::php_bin} ${composer::target_dir}/${composer::composer_file} --stability=${stability}"
+  $base_command = "${composer::php_bin} ${composer_path} ${stability_config}"
+
   $end_command  = "${project_name} ${target_dir}"
 
   $dev_arg = $dev ? {
@@ -89,11 +91,6 @@ define composer::project(
     default => ''
   }
 
-  $pref_dst = $prefer_dist? {
-    true    => ' --prefer-dist',
-    default => ''
-  }
-
   $v = $version? {
     undef   => '',
     default => " ${version}",
@@ -104,8 +101,11 @@ define composer::project(
     default => " --working-dir=${working_dir}",
   }
 
+  $concat_cmd = "${base_command}${dev_arg}${repo}${pref_src}${vcs}${wdir}"
+  $or_rm_command = "${end_command}${v} || rm -rf ${target_dir}"
+
   exec { $exec_name:
-    command => "${base_command}${dev_arg}${repo}${pref_src}${pref_dst}${vcs}${wdir} create-project ${end_command}${v}",
+    command => "${base_command}${dev_arg}${repo}${pref_src}${vcs}${wdir} create-project ${end_command}${v}",
     tries   => $tries,
     timeout => $timeout,
     creates => $target_dir,

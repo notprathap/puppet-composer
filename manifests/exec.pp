@@ -20,6 +20,7 @@ define composer::exec (
   $custom_installers        = false,
   $scripts                  = false,
   $optimize                 = false,
+  $ignore_platform_reqs     = false,
   $interaction              = false,
   $dev                      = true,
   $no_update                = false,
@@ -30,7 +31,7 @@ define composer::exec (
   $refreshonly              = false,
   $lock                     = false,
   $timeout                  = undef,
-  $user                     = undef,
+  $user                     = $composer::user,
   $global                   = false,
   $working_dir              = undef,
   $onlyif                   = undef,
@@ -39,27 +40,39 @@ define composer::exec (
   require ::composer
 
   validate_string($cmd, $cwd)
-  validate_bool($lock, $prefer_source, $prefer_dist, $dry_run, $custom_installers, $scripts, $optimize, $interaction, $dev, $verbose, $refreshonly)
+  validate_bool(
+    $lock, $prefer_source, $prefer_dist, $dry_run,
+    $custom_installers, $scripts, $optimize, $ignore_platform_reqs,
+    $interaction, $dev, $verbose, $refreshonly
+  )
   validate_array($packages)
 
+  $m_timeout = $timeout?{
+    undef => 300,
+    default => $timeout
+  }
   Exec {
     path        => "/bin:/usr/bin/:/sbin:/usr/sbin:${composer::target_dir}",
-    environment => "COMPOSER_HOME=${composer::composer_home}",
+    environment => ["COMPOSER_HOME=${composer::composer_home}", "COMPOSER_PROCESS_TIMEOUT=${m_timeout}"],
     user        => $user,
     timeout     => $timeout
   }
 
   if $cmd != 'install' and $cmd != 'update' and $cmd != 'require' {
-    fail("Only types 'install', 'update' and 'require'' are allowed, ${cmd} given")
+    fail(
+      "Only types 'install', 'update' and 'require'' are allowed, ${cmd} given"
+    )
   }
 
   if $prefer_source and $prefer_dist {
     fail('Only one of \$prefer_source or \$prefer_dist can be true.')
   }
 
+  $composer_path = "${composer::target_dir}/${composer::composer_file}"
+
   $command = $global ? {
-    true  => "${composer::php_bin} ${composer::target_dir}/${composer::composer_file} global ${cmd}",
-    false => "${composer::php_bin} ${composer::target_dir}/${composer::composer_file} ${cmd}",
+    true  => "${composer::php_bin} ${composer_path} global ${cmd}",
+    false => "${composer::php_bin} ${composer_path} ${cmd}",
   }
 
   exec { "composer_${cmd}_${title}":

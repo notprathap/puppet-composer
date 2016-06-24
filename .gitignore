@@ -1,4 +1,5 @@
 spec/fixtures/modules/*
+spec/fixtures/puppet/common.yaml
 .bundle/
 vendor/
 Gemfile.lock
@@ -6,4 +7,6 @@ pkg/
 modules/
 .vagrant
 .ruby-version
-metadata.json
+
+# IDE ignores
+.idea

@@ -43,10 +43,14 @@
 #   composer::params class.
 #
 # [*suhosin_enabled*]
-#   If the suhosin mod is enabled. This requires setting php.ini values with augeas
+#   If the suhosin mod is enabled. This requires setting php.ini
+#   values with augeas
 #
 # [*auto_update*]
 #   If the composer binary should automatically be updated on each run
+#
+# [*user*]
+#   The user name to exec the composer commands as. Default is undefined.
 #
 # === Authors
 #
@@ -66,13 +70,19 @@ class composer(
   $suhosin_enabled = $composer::params::suhosin_enabled,
   $auto_update     = $composer::params::auto_update,
   $projects        = hiera_hash('composer::execs', {}),
+  $github_token    = undef,
+  $user            = undef,
 ) inherits ::composer::params {
 
   require ::stdlib
   require ::git
 
   # Validate input vars
-  validate_string($target_dir, $composer_file, $download_method, $tmp_path, $php_package, $curl_package, $wget_package, $composer_home, $php_bin)
+  validate_string(
+    $target_dir, $composer_file, $download_method,
+    $tmp_path, $php_package, $curl_package, $wget_package,
+    $composer_home, $php_bin
+  )
   validate_bool($suhosin_enabled, $auto_update)
 
   # Set the exec path for composer target dir
@@ -86,23 +96,32 @@ class composer(
   # download composer
   case $download_method {
     'curl': {
-      $download_command = "curl -s http://getcomposer.org/installer | ${composer::php_bin}"
+      $download_command = "curl -sS https://getcomposer.org/installer | ${composer::php_bin} -- --install-dir=${tmp_path} --filename=${composer_file}"
       $download_require = $suhosin_enabled ? {
         false    => [ Package['curl', $php_package] ],
-        default  => [ Package['curl', $php_package], Augeas['allow_url_fopen', 'whitelist_phar'] ],
+        default  => [
+          Package['curl', $php_package],
+          Augeas['allow_url_fopen', 'whitelist_phar']
+        ],
       }
       $method_package = $curl_package
     }
     'wget': {
-      $download_command = 'wget http://getcomposer.org/composer.phar -O composer.phar'
+      $download_command = "wget https://getcomposer.org/composer.phar -O ${composer_file}"
       $download_require = $suhosin_enabled ? {
         false   => [ Package['wget', $php_package] ],
-        default => [ Package['wget', $php_package], Augeas['allow_url_fopen', 'whitelist_phar'] ],
+        default => [
+          Package['wget', $php_package],
+          Augeas['allow_url_fopen', 'whitelist_phar']
+        ],
       }
       $method_package = $wget_package
     }
     default: {
-      fail("The param download_method ${download_method} is not valid. Please set download_method to curl or wget.")
+      fail(
+        "The param download_method ${download_method} is not valid.
+        Please set download_method to curl or wget."
+      )
     }
   }
 
@@ -117,21 +136,23 @@ class composer(
     }
   }
 
-  if defined(File["${target_dir}/${composer_file}"]) == false {
-		exec { 'download_composer':
-		  command   => $download_command,
-		  cwd       => $tmp_path,
-		  require   => $download_require,
-		  creates   => "${tmp_path}/composer.phar",
-		  logoutput => $logoutput,
-		}
-		# move file to target_dir
-		file { "${target_dir}/${composer_file}":
-		  ensure  => present,
-		  source  => "${tmp_path}/composer.phar",
-		  require => [ Exec['download_composer'], File[$target_dir] ],
-		  mode    => 0755,
-		}
+  # download composer if target_file doesn't exist
+  exec { "download_composer":
+    command     => $download_command,
+    cwd         => $tmp_path,
+    require     => $download_require,
+    creates     => "${tmp_path}/${composer_file}",
+    logoutput   => $logoutput,
+    onlyif      => "test ! -f ${target_dir}/${composer_file}",
+    path        => [ '/bin', '/usr/bin' ],
+    notify      => Exec["move_composer_${target_dir}"],
+    environment => ["COMPOSER_HOME=${composer::composer_home}"]
+  }
+
+  # move downloaded file to target_dir
+  exec { "move_composer_${target_dir}":
+    command     => "mv ${tmp_path}/${composer_file} ${target_dir}/${composer_file}; chmod 0755 ${target_dir}/${composer_file}",
+    refreshonly => true,
   }
 
   if $auto_update == true {
@@ -139,48 +160,82 @@ class composer(
   }
 
   if $suhosin_enabled == true {
-    case $family {
+    case $composer::params::family {
 
       'Redhat','Centos': {
 
         # set /etc/php5/cli/php.ini/suhosin.executor.include.whitelist = phar
         augeas { 'whitelist_phar':
-          context     => '/files/etc/suhosin.ini/suhosin',
-          changes     => 'set suhosin.executor.include.whitelist phar',
-          require     => Package[$php_package],
+          context => '/files/etc/suhosin.ini/suhosin',
+          changes => 'set suhosin.executor.include.whitelist phar',
+          require => Package[$php_package],
         }
 
         # set /etc/cli/php.ini/PHP/allow_url_fopen = On
         augeas{ 'allow_url_fopen':
-          context     => '/files/etc/php.ini/PHP',
-          changes     => 'set allow_url_fopen On',
-          require     => Package[$php_package],
+          context => '/files/etc/php.ini/PHP',
+          changes => 'set allow_url_fopen On',
+          require => Package[$php_package],
         }
       }
 
-     'Debian': {
+      'Debian': {
 
         # set /etc/php5/cli/php.ini/suhosin.executor.include.whitelist = phar
         augeas { 'whitelist_phar':
-          context     => '/files/etc/php5/conf.d/suhosin.ini/suhosin',
-          changes     => 'set suhosin.executor.include.whitelist phar',
-          require     => Package[$php_package],
+          context => '/files/etc/php5/conf.d/suhosin.ini/suhosin',
+          changes => 'set suhosin.executor.include.whitelist phar',
+          require => Package[$php_package],
         }
 
         # set /etc/php5/cli/php.ini/PHP/allow_url_fopen = On
         augeas { 'allow_url_fopen':
-          context     => '/files/etc/php5/cli/php.ini/PHP',
-          changes     => 'set allow_url_fopen On',
-          require     => Package[$php_package],
+          context => '/files/etc/php5/cli/php.ini/PHP',
+          changes => 'set allow_url_fopen On',
+          require => Package[$php_package],
         }
       }
+
+      'FreeBSD': {
+        # set /usr/local/etc/php/suhosin.ini/suhosin.executor.include.whitelist = phar
+        augeas { 'whitelist_phar':
+          context => '/files/usr/local/etc/php/suhosin.ini/suhosin',
+          changes => 'set suhosin.executor.include.whitelist phar',
+          require => Package[$php_package],
+        }
+
+        # set /usr/local/etc/php.ini/PHP/allow_url_fopen = On
+        augeas { 'allow_url_fopen':
+          context => '/files/usr/local/etc/php.ini/PHP',
+          changes => 'set allow_url_fopen On',
+          require => Package[$php_package],
+        }
+      }
+
+      default: {}
     }
   }
 
-  if $projects or $execs{
+  $composer_path = "${target_dir}/${composer_file}"
+  $github_config = 'config -g github-oauth.github.com'
+
+  if $github_token {
+    Exec {
+      environment => "COMPOSER_HOME=${composer_home}",
+    }
+    exec { 'setup_github_token':
+      command => "${composer_path} ${github_config} ${github_token}",
+      cwd     => $tmp_path,
+      require => File["${target_dir}/${composer_file}"],
+      user    => $user,
+      unless  => "${composer_path} ${github_config}|grep ${github_token}",
+    }
+  }
+
+  if $projects or $::execs {
     class {'composer::project_factory' :
       projects => $projects,
-      execs    => $execs,
+      execs    => $::execs,
     }
   }
 }

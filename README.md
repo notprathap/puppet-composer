@@ -2,6 +2,10 @@
 
 [![Build Status](https://travis-ci.org/tPl0ch/puppet-composer.png?branch=master)](https://travis-ci.org/tPl0ch/puppet-composer)
 
+## Maintainers needed!
+
+See https://github.com/tPl0ch/puppet-composer/issues/84 for more details!
+
 ## Description
 
 The `puppet-composer` module installs the latest version of Composer from http://getcomposer.org. Composer is a dependency manager for PHP.
@@ -17,6 +21,7 @@ This module supports puppet in versions `>= 2.7, <3.5`
 * `Redhat`
 * `Centos`
 * `Amazon Linux`
+* `FreeBSD`
 
 ## Installation
 
@@ -66,6 +71,8 @@ class { 'composer':
     php_bin         => 'php', # could also i.e. be 'php -d "apc.enable_cli=0"' for more fine grained control
     suhosin_enabled => true,
     auto_update     => false, # Set to true to automatically update composer to the latest version
+    github_token    => '1234567890abcdefgh',
+    user            => 'app',
 }
 ```
 
@@ -101,6 +108,7 @@ composer::exec { 'silex-update':
     dry_run              => false, # Just simulate actions
     custom_installers    => false, # No custom installers
     scripts              => false, # No script execution
+    ignore_platform_reqs => false, # Ignore platform requirements
     interaction          => false, # No interactive questions
     optimize             => false, # Optimize autoloader
     dev                  => true, # Install dev dependencies
@@ -123,6 +131,7 @@ composer::exec { 'silex-install':
     dry_run              => false, # Just simulate actions
     custom_installers    => false, # No custom installers
     scripts              => false, # No script execution
+    ignore_platform_reqs => false, # Ignore platform requirements
     interaction          => false, # No interactive questions
     optimize             => false, # Optimize autoloader
     dev                  => true, # Install dev dependencies
@@ -180,6 +189,30 @@ To get started with the Vagrant VM you should first get the [Unit Tests](#unit-t
 To bring up the development VM you can run `rake vagrant:up`. This Rake task runs `rake spec_prep` as a pre-requisite so that the `git` Puppet module is available. With the VM up and running you can login via SSH with `vagrant ssh` and run `puppet apply` against it with `rake vagrant:provision`.
 
 The VM will get the `spec/fixtures/manifests/vagrant.pp` file applied to the node. This currently creates a Silex project at `/tmp/silex` when the VM starts up. You can modify this manifest to your liking.
+
+### Acceptance Tests
+
+Acceptance tests are written using [Beaker](https://github.com/puppetlabs/beaker/wiki).
+
+To run the beaker tests via rake, you can simply run `rake beaker`.
+
+To use something other than the default beaker node, try the following:
+
+```
+BEAKER_set=ubuntu-server-1404-x64 rake beaker
+```
+
+To use beaker without rake, simply run `rspec spec/acceptance`.
+
+**Beaker + Hiera**
+
+When running acceptance tests, you may hit GitHub rate limits much faster than you would otherwise. To ensure your tests do not fail arbitrarily, you can add your GitHub auth token via hiera.
+
+Create a hiera config at `spec/fixtures/puppet/common.yaml`, that looks like this:
+
+```yaml
+composer::github_token: 'my_github_auth_token'
+```
 
 Happy testing!
 
