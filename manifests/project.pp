@@ -105,7 +105,7 @@ define composer::project(
   $or_rm_command = "${end_command}${v} || rm -rf ${target_dir}"
 
   exec { $exec_name:
-    command => "${concat_cmd} --no-interaction create-project ${or_rm_command}",
+    command => "${base_command}${dev_arg}${repo}${pref_src}${vcs}${wdir} create-project ${end_command}${v}",
     tries   => $tries,
     timeout => $timeout,
     creates => $target_dir,
